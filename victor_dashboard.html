@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>@victor_hauch · Performance Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #14101c;
+    --surface: #1c1626;
+    --surface2: #241c33;
+    --border: #322842;
+    --accent: #b48ee0;
+    --accent2: #ff8c6b;
+    --green: #3de89e;
+    --red: #ff5577;
+    --blue: #6ea8ff;
+    --text: #f2eef8;
+    --muted: #6c6280;
+    --label: #a196b8;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Barlow', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 0 0 60px 0;
+  }
+
+  #loading {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    height: 100vh; gap: 20px;
+  }
+  .spinner {
+    width: 40px; height: 40px;
+    border: 3px solid var(--border); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text {
+    font-family: 'Barlow Condensed', sans-serif; font-size: 14px;
+    letter-spacing: 3px; text-transform: uppercase; color: var(--muted);
+  }
+
+  #error-state {
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    height: 100vh; gap: 16px; padding: 40px; text-align: center;
+  }
+  .error-title { font-family: 'Barlow Condensed', sans-serif; font-size: 22px; font-weight: 800; color: var(--red); letter-spacing: 1px; text-transform: uppercase; }
+  .error-msg { font-size: 14px; color: var(--label); max-width: 500px; line-height: 1.7; }
+  .error-msg code { background: var(--surface); padding: 2px 6px; border-radius: 3px; font-size: 12px; color: var(--accent); }
+
+  #dashboard { display: none; }
+
+  .header {
+    background: var(--surface); border-bottom: 2px solid var(--accent);
+    padding: 24px 40px; display: flex; align-items: center;
+    justify-content: space-between; flex-wrap: wrap; gap: 12px;
+  }
+  .header-left { display: flex; align-items: center; gap: 16px; }
+  .handle { font-family: 'Barlow Condensed', sans-serif; font-size: 28px; font-weight: 900; letter-spacing: 1px; color: var(--accent); text-transform: uppercase; }
+  .phase-badge { background: var(--accent); color: #14101c; font-family: 'Barlow Condensed', sans-serif; font-weight: 800; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; padding: 4px 12px; border-radius: 2px; }
+  .header-right { font-size: 13px; color: var(--label); text-align: right; line-height: 1.6; }
+  .header-right strong { color: var(--text); }
+  #last-updated { color: var(--green); }
+
+  .container { max-width: 1200px; margin: 0 auto; padding: 36px 40px 0; }
+
+  .section-title {
+    font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 700;
+    letter-spacing: 3px; text-transform: uppercase; color: var(--muted);
+    margin-bottom: 16px; display: flex; align-items: center; gap: 10px;
+  }
+  .section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  /* KPI CARDS */
+  .kpi-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 32px; }
+  .kpi-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-top: 3px solid var(--border); padding: 20px 22px;
+    transition: border-color 0.2s, transform 0.2s; animation: fadeUp 0.5s both;
+  }
+  .kpi-card:hover { transform: translateY(-2px); border-color: var(--accent); }
+  .kpi-card.on-track { border-top-color: var(--green); }
+  .kpi-card.warn { border-top-color: var(--accent); }
+  .kpi-card.behind { border-top-color: var(--red); }
+  .kpi-label { font-size: 11px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: var(--label); margin-bottom: 10px; }
+  .kpi-value { font-family: 'Barlow Condensed', sans-serif; font-size: 38px; font-weight: 900; line-height: 1; color: var(--text); margin-bottom: 6px; }
+  .kpi-sub { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; padding: 3px 8px; border-radius: 2px; }
+  .badge.green { background: rgba(61,232,158,0.15); color: var(--green); }
+  .badge.yellow { background: rgba(180,142,224,0.15); color: var(--accent); }
+  .badge.red { background: rgba(255,85,119,0.15); color: var(--red); }
+  .badge.blue { background: rgba(110,168,255,0.15); color: var(--blue); }
+
+  /* BASELINE VS TARGET */
+  .bt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 32px; }
+  .bt-card { background: var(--surface); border: 1px solid var(--border); padding: 22px 24px; animation: fadeUp 0.5s both; }
+  .bt-card.target { border-color: var(--accent); }
+  .bt-title { font-family: 'Barlow Condensed', sans-serif; font-size: 22px; font-weight: 900; text-transform: uppercase; margin-bottom: 4px; }
+  .bt-card.baseline .bt-title { color: var(--text); }
+  .bt-card.target .bt-title { color: var(--accent); }
+  .bt-date { font-size: 11px; color: var(--muted); margin-bottom: 14px; letter-spacing: 1px; }
+  .bt-row { display: flex; align-items: baseline; gap: 6px; font-size: 13px; color: var(--label); padding: 6px 0; }
+  .bt-row strong { color: var(--text); font-size: 16px; }
+  .bt-sub { font-size: 12px; color: var(--label); padding: 2px 0 2px 4px; }
+  .bt-sub strong { color: var(--text); }
+
+  /* CHARTS */
+  .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px; }
+  .chart-card { background: var(--surface); border: 1px solid var(--border); padding: 24px; animation: fadeUp 0.5s both; }
+  .chart-card.wide { grid-column: 1 / -1; }
+  .chart-title { font-family: 'Barlow Condensed', sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--label); margin-bottom: 20px; }
+
+  /* SORTABLE TABLE */
+  thead th[data-col] { user-select: none; }
+  thead th[data-col]:hover { color: var(--accent); }
+  thead th.sort-asc::after { content: ' ▲'; color: var(--accent); font-size: 9px; }
+  thead th.sort-desc::after { content: ' ▼'; color: var(--accent); font-size: 9px; }
+
+  /* CONTENT MIX */
+  .mix-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 32px; }
+  .mix-card { background: var(--surface); border: 1px solid var(--border); padding: 20px; animation: fadeUp 0.5s both; }
+  .mix-type { font-family: 'Barlow Condensed', sans-serif; font-size: 22px; font-weight: 900; text-transform: uppercase; margin-bottom: 4px; }
+  .mix-share { font-family: 'Barlow Condensed', sans-serif; font-size: 44px; font-weight: 900; line-height: 1; margin-bottom: 12px; }
+  .mix-share.reel { color: var(--green); }
+  .mix-share.carousel { color: var(--blue); }
+  .mix-share.post { color: var(--accent2); }
+  .mix-stats { display: flex; flex-direction: column; gap: 4px; }
+  .mix-stat { font-size: 12px; color: var(--label); }
+  .mix-stat span { color: var(--text); font-weight: 600; }
+
+  /* PILLARS */
+  .pillar-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 32px; }
+  .pillar-card { background: var(--surface); border: 1px solid var(--border); padding: 22px 24px; animation: fadeUp 0.5s both; }
+  .pillar-name { font-family: 'Barlow Condensed', sans-serif; font-size: 19px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 14px; }
+  .pillar-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .pillar-stat-val { font-family: 'Barlow Condensed', sans-serif; font-size: 24px; font-weight: 800; line-height: 1; }
+  .pillar-stat-lbl { font-size: 10px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-top: 2px; }
+
+  /* TABLE */
+  .table-card { background: var(--surface); border: 1px solid var(--border); overflow: hidden; animation: fadeUp 0.5s both; margin-bottom: 32px; }
+  .table-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th { background: var(--surface2); padding: 10px 16px; text-align: left; font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border); white-space: nowrap; }
+  tbody tr { border-bottom: 1px solid var(--border); transition: background 0.15s; }
+  tbody tr:hover { background: rgba(255,255,255,0.02); }
+  tbody td { padding: 11px 16px; color: var(--text); white-space: nowrap; }
+  tbody td.muted { color: var(--label); }
+  .format-tag { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; padding: 2px 7px; border-radius: 2px; }
+  .format-tag.reel { background: rgba(61,232,158,0.15); color: var(--green); }
+  .format-tag.carousel { background: rgba(110,168,255,0.15); color: var(--blue); }
+  .format-tag.post { background: rgba(255,140,107,0.15); color: var(--accent2); }
+  .ad-tag { display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; padding: 2px 6px; border-radius: 2px; background: rgba(180,142,224,0.15); color: var(--accent); margin-left: 6px; }
+  .er-high { color: var(--green); font-weight: 600; }
+  .er-mid { color: var(--accent); font-weight: 600; }
+  .er-low { color: var(--label); }
+  .skip-low { color: var(--green); font-weight: 600; }
+  .skip-mid { color: var(--accent); font-weight: 600; }
+  .skip-high { color: var(--red); font-weight: 600; }
+  .ig-link { color: var(--label); text-decoration: none; font-size: 11px; opacity: 0.6; transition: opacity 0.2s, color 0.2s; }
+  .ig-link:hover { opacity: 1; color: var(--accent); }
+
+  .footnote { font-size: 11px; color: var(--muted); padding: 0 40px; max-width: 1200px; margin: 0 auto; line-height: 1.6; }
+
+  /* RECENT POST CARDS */
+  .recent-post-card {
+    background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent);
+    display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
+    gap: 0; overflow: hidden; animation: fadeUp 0.4s both;
+  }
+  .rp-main { padding: 18px 22px; border-right: 1px solid var(--border); }
+  .rp-tag { display:inline-block; font-size:10px; font-weight:700; letter-spacing:1px; text-transform:uppercase; padding:2px 8px; border-radius:2px; margin-bottom:10px; }
+  .rp-title { font-family:"Barlow Condensed",sans-serif; font-size:22px; font-weight:900; line-height:1.1; color:var(--text); margin-bottom:4px; }
+  .rp-meta { font-size:11px; color:var(--muted); margin-bottom:10px; }
+  .rp-notice { font-size:10px; color:var(--accent); font-weight:600; letter-spacing:1px; text-transform:uppercase; background:rgba(180,142,224,0.08); display:inline-block; padding:2px 8px; border-radius:2px; margin-bottom:10px; }
+  .rp-link { font-size:11px; color:var(--label); text-decoration:none; opacity:0.7; transition:opacity 0.2s, color 0.2s; }
+  .rp-link:hover { opacity:1; color:var(--accent); }
+  .rp-stat { padding:18px 20px; border-right:1px solid var(--border); display:flex; flex-direction:column; justify-content:center; }
+  .rp-stat:last-child { border-right: none; }
+  .rp-stat-label { font-size:9px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:var(--muted); margin-bottom:6px; }
+  .rp-stat-value { font-family:"Barlow Condensed",sans-serif; font-size:36px; font-weight:900; line-height:1; }
+  .rp-stat-sub { font-size:10px; color:var(--muted); margin-top:3px; }
+  .rp-stat-pending { font-size:12px; color:var(--muted); font-style:italic; }
+
+  /* BEST POST */
+  .best-post { display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:0; background:var(--surface); border:1px solid var(--border); border-top:3px solid var(--accent); margin-bottom:32px; overflow:hidden; animation:fadeUp 0.4s both; }
+  .bp-main { padding:24px 28px; border-right:1px solid var(--border); }
+  .bp-tag { display:inline-block; font-size:10px; font-weight:700; letter-spacing:1px; text-transform:uppercase; padding:3px 8px; border-radius:2px; margin-bottom:12px; }
+  .bp-title { font-family:"Barlow Condensed",sans-serif; font-size:26px; font-weight:900; line-height:1.1; margin-bottom:6px; color:var(--text); }
+  .bp-date { font-size:11px; color:var(--muted); margin-bottom:16px; }
+  .bp-link { font-size:11px; color:var(--accent); text-decoration:none; letter-spacing:1px; font-weight:600; }
+  .bp-link:hover { text-decoration:underline; }
+  .bp-stat { padding:24px 28px; border-right:1px solid var(--border); display:flex; flex-direction:column; justify-content:center; }
+  .bp-stat:last-child { border-right:none; }
+  .bp-stat-label { font-size:10px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:var(--muted); margin-bottom:8px; }
+  .bp-stat-value { font-family:"Barlow Condensed",sans-serif; font-size:48px; font-weight:900; line-height:1; }
+  .bp-stat-sub { font-size:11px; color:var(--muted); margin-top:4px; }
+
+  @keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+
+  @media (max-width: 900px) {
+    .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    .bt-grid { grid-template-columns: 1fr; }
+    .charts-grid, .signal-grid { grid-template-columns: 1fr; }
+    .mix-grid { grid-template-columns: 1fr; }
+    .pillar-grid { grid-template-columns: 1fr; }
+    .container { padding: 24px 20px 0; }
+    .header { padding: 18px 20px; }
+    .footnote { padding: 0 20px; }
+    .recent-post-card { grid-template-columns: 1fr 1fr; }
+    .rp-main { grid-column: 1/-1; }
+  }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <div class="loading-text">Henter live data…</div>
+</div>
+
+<div id="error-state">
+  <div class="error-title">⚠ Kunne ikke hente data</div>
+  <div class="error-msg" id="error-msg"></div>
+</div>
+
+<div id="dashboard">
+
+<div class="header">
+  <div class="header-left">
+    <div class="handle">@victor_hauch</div>
+    <div class="phase-badge">🎵 Baseline Q1+Q2 → Target EOQ4</div>
+  </div>
+  <div class="header-right">
+    Baseline: <strong>08 Jul 2026</strong> · Target: <strong>31 Dec 2026</strong><br>
+    Live data · Sidst hentet: <strong id="last-updated">—</strong>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="section-title">Live KPIs</div>
+  <div class="kpi-grid" id="kpi-grid">
+    <div class="kpi-card" id="kpi-followers">
+      <div class="kpi-label">Følgere</div>
+      <div class="kpi-value" id="kv-followers">—</div>
+      <div class="kpi-sub"><span class="badge" id="kb-followers">—</span></div>
+    </div>
+    <div class="kpi-card" id="kpi-reach">
+      <div class="kpi-label">Avg. Reach</div>
+      <div class="kpi-value" id="kv-reach">—</div>
+      <div class="kpi-sub"><span class="badge green" id="kb-reach">—</span></div>
+    </div>
+    <div class="kpi-card" id="kpi-er">
+      <div class="kpi-label">Avg. ER</div>
+      <div class="kpi-value" id="kv-er">—</div>
+      <div class="kpi-sub"><span class="badge green" id="kb-er">—</span></div>
+    </div>
+    <div class="kpi-card" id="kpi-eng">
+      <div class="kpi-label">Avg. Engagements</div>
+      <div class="kpi-value" id="kv-eng">—</div>
+      <div class="kpi-sub"><span class="badge" id="kb-eng">—</span></div>
+    </div>
+    <div class="kpi-card" id="kpi-cadence">
+      <div class="kpi-label">Posting Cadence</div>
+      <div class="kpi-value" id="kv-cadence">—</div>
+      <div class="kpi-sub"><span class="badge" id="kb-cadence">—</span> <span id="ks-cadence">posts sidste 4 uger</span></div>
+    </div>
+    <div class="kpi-card" id="kpi-conv">
+      <div class="kpi-label">Conversion Rate</div>
+      <div class="kpi-value" id="kv-conv">—</div>
+      <div class="kpi-sub"><span class="badge" id="kb-conv">—</span> <span>følgere / 1k reach</span></div>
+    </div>
+  </div>
+
+  <div class="section-title">Baseline vs. Target</div>
+  <div class="bt-grid">
+    <div class="bt-card baseline">
+      <div class="bt-title">Baseline Q1+Q2</div>
+      <div class="bt-date">08-07-2026</div>
+      <div class="bt-row"><strong>1.130</strong> følgere</div>
+      <div class="bt-row"><strong>8</strong> post i Q1+Q2 2026</div>
+      <div class="bt-sub"><strong>8,4%</strong> engagement rate</div>
+      <div class="bt-sub"><strong>1.563</strong> avg. reach</div>
+      <div class="bt-sub"><strong>132</strong> avg. engagements</div>
+      <div class="bt-sub"><strong>1,3/1k</strong> conversion rate</div>
+    </div>
+    <div class="bt-card target">
+      <div class="bt-title">Target EOQ4</div>
+      <div class="bt-date">31-12-2026</div>
+      <div class="bt-row">+<strong>50%</strong> = 1.695 følgere</div>
+      <div class="bt-row"><strong>12</strong>/md post frekvens</div>
+      <div class="bt-sub"><strong>10%</strong> ER</div>
+      <div class="bt-sub"><strong>2.000</strong> avg. reach</div>
+      <div class="bt-sub"><strong>200</strong> avg. engagements</div>
+      <div class="bt-sub"><strong>1,8/1k</strong> conversion rate</div>
+    </div>
+  </div>
+
+  <div class="section-title">Performance Read</div>
+  <div id="analysis-card" style="background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);padding:18px 24px;margin-bottom:32px;font-size:14px;line-height:1.65;color:var(--label);"></div>
+
+  <div class="section-title">Current · Last 7 Days</div>
+  <div id="recent-posts-section">
+    <div id="recent-posts-empty" style="display:none;background:var(--surface);border:1px solid var(--border);padding:20px 24px;font-size:13px;color:var(--muted);margin-bottom:32px;">Ingen posts de sidste 7 dage.</div>
+    <div id="recent-posts-grid" style="display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:32px;"></div>
+  </div>
+
+  <div class="section-title">Trends Over Time</div>
+  <div class="charts-grid">
+    <div class="chart-card wide">
+      <div class="chart-title">Follower Count · Actual vs. Expected Pace</div>
+      <canvas id="followerChart" height="90"></canvas>
+    </div>
+    <div class="chart-card wide">
+      <div class="chart-title">Reach &amp; Impressions Per Post</div>
+      <canvas id="reachChart" height="160"></canvas>
+    </div>
+  </div>
+
+  <div class="section-title">Weekly Conversion · Followers per 1,000 Reach</div>
+  <div class="chart-card wide" style="margin-bottom:16px;">
+    <div class="chart-title">Conversion Rate Per Week · Target ≥ 1.8</div>
+    <canvas id="conversionChart" height="80"></canvas>
+  </div>
+  <div class="table-card">
+    <div class="table-header">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:15px;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Weekly Breakdown</div>
+      <div style="font-size:12px;color:var(--muted);">Target: 22 nye følgere/uge · rate ≥ 1.8</div>
+    </div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr><th>Week (Mon)</th><th>Posts</th><th>Reach</th><th>Views</th><th>New Followers</th><th>Rate /1k</th></tr>
+        </thead>
+        <tbody id="weekTable"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section-title">Best Performing Post</div>
+  <div id="best-post-card"></div>
+
+  <div class="section-title">Content Format Mix</div>
+  <div class="mix-grid" id="mix-grid"></div>
+
+  <div class="section-title">Content Pillars</div>
+  <div class="pillar-grid" id="pillar-grid"></div>
+
+  <div class="section-title">Post Log · Click any column to sort</div>
+  <div class="table-card">
+    <div class="table-header">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:15px;font-weight:700;letter-spacing:1px;text-transform:uppercase;">All Posts</div>
+      <div style="font-size:12px;color:var(--muted);" id="post-count">—</div>
+    </div>
+    <div style="overflow-x:auto;">
+      <table id="postTable-wrap">
+        <thead>
+          <tr id="postTableHead">
+            <th data-col="date" style="cursor:pointer;">Date</th>
+            <th>Title</th>
+            <th data-col="format" style="cursor:pointer;">Format</th>
+            <th data-col="pillar" style="cursor:pointer;">Pillar</th>
+            <th data-col="reach" style="cursor:pointer;">Reach ↕</th>
+            <th data-col="views" style="cursor:pointer;">Views ↕</th>
+            <th data-col="skipRate" style="cursor:pointer;">Skip Rate ↕</th>
+            <th data-col="saves1k" style="cursor:pointer;">Saves/1k ↕</th>
+            <th data-col="sends1k" style="cursor:pointer;">Sends/1k ↕</th>
+            <th data-col="er" style="cursor:pointer;">ER % ↕</th>
+            <th data-col="newFollowers" style="cursor:pointer;">New Followers ↕</th>
+            <th>Link</th>
+          </tr>
+        </thead>
+        <tbody id="postTable"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<div class="footnote">
+  * Data hentes live fra Google Sheets ved hvert sidebesøg. Posts markeret <strong>AD</strong> er annonceboostet reach og indgår ikke i gennemsnitsberegninger (reach, ER, conversion rate), men vises i post-loggen. Baseline: Q1+Q2 2026, opgjort 08-07-2026.
+</div>
+
+</div>
+
+<script>
+const SHEET_ID  = '1EpONWXyJhEoqU-bl3kXlaPKFArUHfy5CuEjMYvt2UVI';
+const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv`;
+
+const BASELINE_FOLLOWERS  = 1130;
+const TARGET_FOLLOWERS    = 1695;
+const PHASE_START         = new Date('2026-07-08');
+const PHASE_END           = new Date('2026-12-31');
+const PHASE_DAYS          = (PHASE_END - PHASE_START) / 86400000;
+const TARGET_WEEKLY_FOLLOWERS = 22;
+const MIN_RATE             = 1.8;
+const TARGET_AVG_REACH     = 2000;
+const TARGET_ER            = 10;
+const TARGET_CADENCE_MO    = 12;
+
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/);
+  return lines.map(line => {
+    const cols = [];
+    let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') { inQ = !inQ; }
+      else if (ch === ',' && !inQ) { cols.push(cur.trim()); cur = ''; }
+      else { cur += ch; }
+    }
+    cols.push(cur.trim());
+    return cols;
+  });
+}
+
+async function fetchSheetData() {
+  const res = await fetch(SHEET_URL);
+  if (!res.ok) throw new Error(`HTTP ${res.status} fetching sheet`);
+  return parseCSV(await res.text());
+}
+
+function parseRows(rows) {
+  const posts = [];
+  for (let ri = 2; ri < rows.length; ri++) {
+    const cols = rows[ri];
+    if (!cols || cols.length < 5) continue;
+    const dateRaw = cols[0].replace(/"/g,'').trim();
+    if (!dateRaw || !/\d/.test(dateRaw)) continue;
+    let dateStr = dateRaw.replace(/[.\-]/g, '/');
+    if (!/\d{2}\/\d{2}\/\d{4}/.test(dateStr)) continue;
+
+    const gRaw = (i, fallback = '') => (i >= cols.length) ? fallback : cols[i].replace(/"/g,'').trim();
+    const gn = (i, fallback = 0) => {
+      const raw = gRaw(i, '').replace('%','').replace(',','.').trim();
+      if (raw === '' || raw === '—' || raw === '-') return fallback;
+      const n = parseFloat(raw);
+      return isNaN(n) ? fallback : n;
+    };
+    const gs = (i, fallback = '') => gRaw(i, fallback);
+
+    // Col indices (Victor's sheet — no native ER% / running-reach columns):
+    // 0:date_posted 1:date_reported 2:title 3:link 4:format 5:pillar
+    // 6:followers_at_post 7:followers_at_report
+    // 8:likes 9:comments 10:sends 11:repost 12:saves
+    // 13:reach 14:views 15:profile_visits 16:new_followers
+    // 17:skip_rate 18:followers_pct_of_reach 19:non_followers_pct_of_reach
+
+    const reachRaw = gRaw(13, '');
+    const viewsRaw = gRaw(14, '');
+    const isPaid   = /annonce/i.test(reachRaw) || /annonce/i.test(viewsRaw);
+    const reach    = gn(13, 0);
+    const views    = gn(14, 0);
+    if (reach === 0) continue;
+
+    const skipRaw  = gn(17, null);
+    const skipRate = skipRaw === null || skipRaw === 0 ? null
+                    : (skipRaw > 1 ? skipRaw : skipRaw * 100);
+
+    const fmt = gs(4) || 'Post';
+
+    const likes = gn(8), comments = gn(9), sends = gn(10), repost = gn(11), saves = gn(12);
+    const totalEng = likes + comments + sends + repost + saves;
+    const er = reach > 0 ? +(totalEng / reach * 100).toFixed(2) : 0;
+
+    posts.push({
+      date:         dateStr,
+      title:        gs(2),
+      url:          gs(3),
+      format:       fmt,
+      pillar:       gs(5) || '—',
+      followers:    gn(6),
+      reach:        reach,
+      views:        views,
+      er:           er,
+      engagement:   totalEng,
+      saves:        saves,
+      sends:        sends,
+      comments:     comments,
+      newFollowers: gn(16),
+      skipRate:     fmt.toLowerCase() === 'reel' ? skipRate : null,
+      isPaid:       isPaid,
+    });
+  }
+  return posts;
+}
+
+function computeStats(posts) {
+  if (!posts.length) return null;
+
+  const sorted = [...posts].sort((a,b) => parseDate(b.date) - parseDate(a.date));
+  const latestFollowers = sorted[0].followers;
+
+  const today = new Date();
+  const daysIn = Math.max(0, (today - PHASE_START) / 86400000);
+  const expectedToday = Math.round(BASELINE_FOLLOWERS + (TARGET_FOLLOWERS - BASELINE_FOLLOWERS) * (daysIn / PHASE_DAYS));
+  const gap = latestFollowers - expectedToday;
+
+  // Only posts within the active tracking phase, organic (non-paid) for averages
+  const phasePosts  = posts.filter(p => parseDate(p.date) >= PHASE_START);
+  const activePosts = phasePosts.length ? phasePosts : posts;
+  const organicPosts = activePosts.filter(p => !p.isPaid && p.reach > 0);
+
+  const cutoff      = new Date(today - 28*86400000);
+  const recentPosts = activePosts.filter(p => parseDate(p.date) >= cutoff);
+  const avgReach    = organicPosts.length ? Math.round(organicPosts.reduce((s,p) => s+p.reach, 0) / organicPosts.length) : 0;
+  const avgER       = organicPosts.length ? +(organicPosts.reduce((s,p) => s+p.er, 0) / organicPosts.length).toFixed(1) : 0;
+  const avgEng      = organicPosts.length ? Math.round(organicPosts.reduce((s,p) => s+p.engagement, 0) / organicPosts.length) : 0;
+
+  // Content mix (organic only)
+  const formats = {};
+  organicPosts.forEach(p => {
+    const f = p.format || 'Other';
+    if (!formats[f]) formats[f] = { count:0, reach:0, er:0, engagement:0, views:0, followers:0, skipSum:0, skipCount:0 };
+    formats[f].count++;
+    if (p.skipRate !== null) { formats[f].skipSum += p.skipRate; formats[f].skipCount++; }
+    formats[f].reach      += p.reach;
+    formats[f].er         += p.er;
+    formats[f].engagement += p.engagement;
+    formats[f].views      += p.views;
+    formats[f].followers  += p.newFollowers;
+  });
+  Object.keys(formats).forEach(f => {
+    const fx = formats[f];
+    fx.avgReach      = Math.round(fx.reach / fx.count);
+    fx.avgER         = +(fx.er / fx.count).toFixed(1);
+    fx.avgEngagement = Math.round(fx.engagement / fx.count);
+    fx.avgViews      = Math.round(fx.views / fx.count);
+    fx.avgFollowers  = +(fx.followers / fx.count).toFixed(1);
+    fx.convRate      = fx.reach > 0 ? +(fx.followers / fx.reach * 1000).toFixed(2) : 0;
+    fx.avgSkipRate   = fx.skipCount > 0 ? +(fx.skipSum / fx.skipCount).toFixed(1) : null;
+    fx.pct           = organicPosts.length ? Math.round(fx.count / organicPosts.length * 100) : 0;
+  });
+
+  // Pillars (organic only)
+  const pillars = {};
+  organicPosts.filter(p => p.pillar && p.pillar !== '—').forEach(p => {
+    const pl = p.pillar;
+    if (!pillars[pl]) pillars[pl] = { count:0, reach:0, er:0, engagement:0, views:0, followers:0, skipSum:0, skipCount:0 };
+    pillars[pl].count++;
+    if (p.skipRate !== null) { pillars[pl].skipSum += p.skipRate; pillars[pl].skipCount++; }
+    pillars[pl].reach      += p.reach;
+    pillars[pl].er         += p.er;
+    pillars[pl].engagement += p.engagement;
+    pillars[pl].views      += p.views;
+    pillars[pl].followers  += p.newFollowers;
+  });
+  Object.keys(pillars).forEach(pl => {
+    const px = pillars[pl];
+    px.avgReach      = Math.round(px.reach / px.count);
+    px.avgER         = +(px.er / px.count).toFixed(1);
+    px.avgEngagement = Math.round(px.engagement / px.count);
+    px.avgViews      = Math.round(px.views / px.count);
+    px.avgFollowers  = +(px.followers / px.count).toFixed(1);
+    px.convRate      = px.reach > 0 ? +(px.followers / px.reach * 1000).toFixed(2) : 0;
+    px.avgSkipRate   = px.skipCount > 0 ? +(px.skipSum / px.skipCount).toFixed(1) : null;
+  });
+
+  // Weekly (organic only, for conversion integrity)
+  const weekMap = {};
+  organicPosts.forEach(p => {
+    const d      = parseDate(p.date);
+    const monday = mondayOf(d);
+    const key    = isoKey(monday);
+    if (!weekMap[key]) weekMap[key] = { monday, posts:0, reach:0, followers:0, views:0 };
+    weekMap[key].posts++;
+    weekMap[key].reach     += p.reach;
+    weekMap[key].followers += p.newFollowers;
+    weekMap[key].views     += p.views;
+  });
+  const weeks = Object.keys(weekMap).sort().map(k => {
+    const w  = weekMap[k];
+    w.rate   = w.reach > 0 ? +(w.followers / w.reach * 1000).toFixed(2) : 0;
+    return w;
+  });
+
+  const totalReach = organicPosts.reduce((s,p)=>s+p.reach,0);
+  const totalNew   = organicPosts.reduce((s,p)=>s+p.newFollowers,0);
+  const convRate   = totalReach > 0 ? +(totalNew / totalReach * 1000).toFixed(2) : 0;
+
+  const analysis = buildAnalysis({ latestFollowers, gap, convRate, avgReach, formats, pillars, organicPosts });
+
+  return { latestFollowers, expectedToday, gap, daysIn,
+           recentCount: recentPosts.length, avgReach, avgER, avgEng,
+           formats, pillars, organicPosts, allPosts: posts, weeks, convRate, analysis };
+}
+
+function parseDate(str) {
+  const [d,m,y] = str.split('/');
+  return new Date(+y, +m-1, +d);
+}
+
+function mondayOf(d) {
+  const date = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const day  = date.getDay();
+  date.setDate(date.getDate() + (day === 0 ? -6 : 1 - day));
+  return date;
+}
+
+function isoKey(d) {
+  return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+}
+
+function buildAnalysis(s) {
+  const lines = [];
+  const today    = new Date();
+  const weeksLeft = Math.max(1, Math.round((PHASE_END - today) / (7 * 86400000)));
+  const toTarget  = Math.max(0, TARGET_FOLLOWERS - s.latestFollowers);
+  const perWeek   = Math.ceil(toTarget / weeksLeft);
+  const paceWord  = s.gap >= 0 ? 'ahead of' : 'behind';
+
+  const pillarRanked = Object.entries(s.pillars)
+    .filter(([, x]) => x.count >= 2)
+    .map(([k, x]) => ({ k, perPost: +(x.followers / x.count).toFixed(1), avgReach: x.avgReach }))
+    .sort((a, b) => b.perPost - a.perPost);
+
+  const formatRanked = Object.entries(s.formats)
+    .filter(([, x]) => x.count >= 2)
+    .map(([k, x]) => ({ k, perPost: +(x.followers / x.count).toFixed(1), avgReach: x.avgReach }))
+    .sort((a, b) => b.perPost - a.perPost);
+
+  const topPillar = pillarRanked[0];
+  const topFormat = formatRanked[0];
+
+  let bullet1 = `Pace: ${s.latestFollowers.toLocaleString()} followers, ${Math.abs(s.gap)} ${paceWord} expected. ${perWeek} new followers/week needed over the next ${weeksLeft} weeks to hit 1,695 by EOQ4.`;
+  if (topFormat && topPillar) {
+    bullet1 += ` ${topFormat.k}s in the "${topPillar.k}" pillar are producing the most — ${topPillar.perPost} followers per post on avg ${topPillar.avgReach.toLocaleString()} reach. That is where to focus posting effort.`;
+  }
+  lines.push(bullet1);
+
+  const reelsWithSkip = s.organicPosts.filter(p => p.format.toLowerCase() === 'reel' && p.skipRate !== null);
+  if (reelsWithSkip.length >= 3) {
+    const avgSkip = reelsWithSkip.reduce((acc, p) => acc + p.skipRate, 0) / reelsWithSkip.length;
+    const lowSkip  = reelsWithSkip.filter(p => p.skipRate < avgSkip);
+    const highSkip = reelsWithSkip.filter(p => p.skipRate >= avgSkip);
+    const avgFollLow  = lowSkip.length  ? +(lowSkip.reduce((a,p)=>a+p.newFollowers,0)  / lowSkip.length).toFixed(1)  : 0;
+    const avgFollHigh = highSkip.length ? +(highSkip.reduce((a,p)=>a+p.newFollowers,0) / highSkip.length).toFixed(1) : 0;
+    const avgReachLow  = lowSkip.length  ? Math.round(lowSkip.reduce((a,p)=>a+p.reach,0)  / lowSkip.length)  : 0;
+    const avgReachHigh = highSkip.length ? Math.round(highSkip.reduce((a,p)=>a+p.reach,0) / highSkip.length) : 0;
+
+    const skipSignalClear = Math.abs(avgFollLow - avgFollHigh) >= 1;
+    if (skipSignalClear) {
+      const betterSide  = avgFollLow > avgFollHigh ? 'below' : 'above';
+      const betterFoll  = avgFollLow > avgFollHigh ? avgFollLow  : avgFollHigh;
+      const betterReach = avgFollLow > avgFollHigh ? avgReachLow : avgReachHigh;
+      const worseFoll   = avgFollLow > avgFollHigh ? avgFollHigh : avgFollLow;
+      lines.push(`Skip rate: reels ${betterSide} the ${avgSkip.toFixed(0)}% average return ${betterFoll} new followers on ${betterReach.toLocaleString()} avg reach, vs ${worseFoll} for those on the other side. Sample is still small, so treat this as a direction to test, not a confirmed pattern.`);
+    } else {
+      lines.push(`Skip rate (avg ${avgSkip.toFixed(1)}%): no clear split between low- and high-skip reels on follower conversion yet. Keep testing hooks as the sample grows.`);
+    }
+  } else {
+    lines.push(`Skip rate data is still thin (${reelsWithSkip.length} reels with a recorded skip rate). Not enough to draw a pattern yet — worth revisiting once there are more reels in the log.`);
+  }
+
+  const validReels = s.organicPosts.filter(p => p.format.toLowerCase() === 'reel' && p.reach > 0);
+  if (validReels.length >= 3) {
+    const avgFoll    = validReels.reduce((a,p) => a + p.newFollowers, 0) / validReels.length;
+    const highSavesFoll = s.organicPosts.filter(p => p.reach > 0 && (p.saves/p.reach*1000) >= 1.0 && p.newFollowers >= avgFoll);
+    if (highSavesFoll.length >= 1) {
+      const names = highSavesFoll.slice(0,2).map(p => `"${p.title}"`).join(' and ');
+      lines.push(`Saves/1k above 1.0 lines up with above-average follower gains so far — ${names} both fit that pattern. Still an early signal given the post count, but worth watching as more content pillars build up a track record.`);
+    } else {
+      lines.push(`No strong saves-to-follower pattern has emerged yet — too few posts to separate signal from noise. Revisit this once there are 15-20 organic posts logged.`);
+    }
+  }
+
+  return lines;
+}
+
+let charts = {};
+
+function renderDashboard(posts, stats) {
+  document.getElementById('last-updated').textContent = new Date().toLocaleString('da-DK', {
+    day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'
+  });
+
+  const { latestFollowers, expectedToday, gap } = stats;
+  const followerOnTrack = gap >= 0;
+  document.getElementById('kv-followers').textContent = latestFollowers.toLocaleString();
+  const kbF = document.getElementById('kb-followers');
+  kbF.textContent = followerOnTrack ? '✓ On Track' : `${gap} vs pace`;
+  kbF.className   = `badge ${followerOnTrack ? 'green' : 'red'}`;
+  document.getElementById('kpi-followers').className = `kpi-card ${followerOnTrack ? 'on-track' : 'behind'}`;
+
+  document.getElementById('kv-reach').textContent = stats.avgReach.toLocaleString();
+  const reachOT = stats.avgReach >= TARGET_AVG_REACH;
+  document.getElementById('kb-reach').textContent = reachOT ? `✓ On Track · Goal: ${TARGET_AVG_REACH.toLocaleString()}` : `Goal: ${TARGET_AVG_REACH.toLocaleString()}`;
+  document.getElementById('kb-reach').className   = `badge ${reachOT ? 'green' : 'yellow'}`;
+  document.getElementById('kpi-reach').className  = `kpi-card ${reachOT ? 'on-track' : 'warn'}`;
+
+  document.getElementById('kv-er').textContent = stats.avgER + '%';
+  const erOT = stats.avgER >= TARGET_ER;
+  document.getElementById('kb-er').textContent = erOT ? `✓ On Track · Goal: ${TARGET_ER}%` : `Goal: ${TARGET_ER}%`;
+  document.getElementById('kb-er').className   = `badge ${erOT ? 'green' : 'yellow'}`;
+  document.getElementById('kpi-er').className  = `kpi-card ${erOT ? 'on-track' : 'warn'}`;
+
+  document.getElementById('kv-eng').textContent = stats.avgEng.toLocaleString();
+  const engOT = stats.avgEng >= 200;
+  document.getElementById('kb-eng').textContent = engOT ? '✓ On Track · Goal: 200' : 'Goal: 200';
+  document.getElementById('kb-eng').className   = `badge ${engOT ? 'green' : 'yellow'}`;
+  document.getElementById('kpi-eng').className  = `kpi-card ${engOT ? 'on-track' : 'warn'}`;
+
+  document.getElementById('kv-cadence').textContent = stats.recentCount;
+  const cadenceGoal4wk = Math.round(TARGET_CADENCE_MO * (4/4.33));
+  const cadOT = stats.recentCount >= cadenceGoal4wk;
+  document.getElementById('kb-cadence').textContent = cadOT ? '✓ On Track' : `Goal: ~${cadenceGoal4wk}/4wk`;
+  document.getElementById('kb-cadence').className   = `badge ${cadOT ? 'green' : 'yellow'}`;
+  document.getElementById('kpi-cadence').className  = `kpi-card ${cadOT ? 'on-track' : 'warn'}`;
+
+  document.getElementById('kv-conv').textContent = stats.convRate.toFixed(2);
+  const convOT = stats.convRate >= MIN_RATE;
+  document.getElementById('kb-conv').textContent = convOT ? `✓ ≥ ${MIN_RATE}` : `Below ${MIN_RATE}`;
+  document.getElementById('kb-conv').className   = `badge ${convOT ? 'green' : 'red'}`;
+  document.getElementById('kpi-conv').className  = `kpi-card ${convOT ? 'on-track' : 'behind'}`;
+
+  const analysisCard = document.getElementById('analysis-card');
+  analysisCard.innerHTML = (stats.analysis || []).map(line =>
+    `<div style="margin-bottom:8px;"><span style="color:var(--accent);font-weight:700;margin-right:6px;">&rsaquo;</span>${line}</div>`
+  ).join('');
+
+  Chart.defaults.color       = '#a196b8';
+  Chart.defaults.borderColor = '#322842';
+  Chart.defaults.font.family = "'Barlow', sans-serif";
+
+  const sortedPosts = [...stats.organicPosts].sort((a,b) => parseDate(a.date) - parseDate(b.date));
+  const postLabels  = sortedPosts.map(p => p.date.substring(0,5));
+
+  // FOLLOWER CHART
+  const monthPoints = [];
+  let mp = new Date(PHASE_START);
+  while (mp <= PHASE_END) {
+    monthPoints.push({ label: mp.toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit'}), date: new Date(mp) });
+    mp = new Date(mp.getFullYear(), mp.getMonth()+1, 1);
+  }
+  const allTimelinePoints = [...monthPoints];
+  sortedPosts.forEach(p => {
+    const pd = parseDate(p.date);
+    if (pd < PHASE_START) return;
+    const label = p.date.substring(0,5);
+    const existing = allTimelinePoints.find(pt => pt.label === label);
+    if (!existing) allTimelinePoints.push({ label, date: pd, isPost: true, followers: p.followers });
+    else { existing.isPost = true; existing.followers = p.followers; }
+  });
+  allTimelinePoints.sort((a,b) => a.date - b.date);
+  const today = new Date();
+  const tlLabels   = allTimelinePoints.map(pt => pt.label);
+  const tlActual   = allTimelinePoints.map(pt => {
+    if (pt.date > today) return null;
+    if (pt.isPost) return pt.followers;
+    const before = [...sortedPosts].filter(p => parseDate(p.date) >= PHASE_START).reverse().find(p => parseDate(p.date) <= pt.date);
+    return before ? before.followers : BASELINE_FOLLOWERS;
+  });
+  const tlExpected = allTimelinePoints.map(pt => {
+    const d = Math.max(0, (pt.date - PHASE_START) / 86400000);
+    return Math.round(BASELINE_FOLLOWERS + (TARGET_FOLLOWERS - BASELINE_FOLLOWERS) * (d / PHASE_DAYS));
+  });
+
+  if (charts.follower) charts.follower.destroy();
+  charts.follower = new Chart(document.getElementById('followerChart'), {
+    type: 'line',
+    data: { labels: tlLabels, datasets: [
+      { label:'Expected pace', data: tlExpected, borderColor:'#ff8c6b', borderDash:[6,4], pointRadius:0, borderWidth:2, fill:false, tension:0, order:2 },
+      { label:'Actual followers', data: tlActual, borderColor:'#b48ee0', backgroundColor:'rgba(180,142,224,0.08)', fill:true, tension:0.3, pointBackgroundColor: tlActual.map(v => v!==null?'#b48ee0':'transparent'), pointRadius: tlActual.map(v => v!==null?4:0), pointHoverRadius:7, borderWidth:2.5, spanGaps:false, order:1 }
+    ]},
+    options: {
+      responsive:true, interaction:{ mode:'index', intersect:false },
+      plugins: { legend:{ display:true, labels:{ color:'#a196b8', font:{size:11}, boxWidth:16, padding:16 } },
+        tooltip:{ backgroundColor:'#1c1626', borderColor:'#322842', borderWidth:1, titleColor:'#f2eef8', bodyColor:'#a196b8', padding:12,
+          callbacks:{ afterBody:(items)=>{ const a=items.find(i=>i.dataset.label==='Actual followers'); const e=items.find(i=>i.dataset.label==='Expected pace'); if(a&&e&&a.raw!=null&&e.raw!=null){const g=a.raw-e.raw; return[`Gap: ${g>=0?'+':''}${g} vs pace`];} return []; } } } },
+      scales:{ x:{grid:{color:'#241c33'},ticks:{maxRotation:0,font:{size:10}}}, y:{min:1080,max:1750,grid:{color:'#241c33'},ticks:{font:{size:10}},title:{display:true,text:'Followers',color:'#6c6280',font:{size:10}}} }
+    }
+  });
+
+  // REACH CHART
+  if (charts.reach) charts.reach.destroy();
+  charts.reach = new Chart(document.getElementById('reachChart'), {
+    type:'bar',
+    data:{ labels:postLabels, datasets:[
+      { label:'Impressions', data:sortedPosts.map(p=>p.views||0), backgroundColor:'rgba(110,168,255,0.3)', borderColor:'transparent', borderRadius:2 },
+      { label:'Reach', data:sortedPosts.map(p=>p.reach), backgroundColor:'rgba(61,232,158,0.65)', borderColor:'transparent', borderRadius:2 }
+    ]},
+    options:{ responsive:true, plugins:{ legend:{display:true,labels:{color:'#a196b8',font:{size:11},boxWidth:12,padding:12}}, tooltip:{backgroundColor:'#1c1626',borderColor:'#322842',borderWidth:1,titleColor:'#f2eef8',bodyColor:'#a196b8',padding:10} }, scales:{ x:{grid:{display:false},ticks:{font:{size:9},maxRotation:45}}, y:{grid:{color:'#241c33'},ticks:{font:{size:10}}} } }
+  });
+
+  // WEEKLY CONVERSION
+  const weeks = stats.weeks || [];
+  const weekTable = document.getElementById('weekTable');
+  weekTable.innerHTML = '';
+  const thisMonday = mondayOf(new Date());
+  weeks.forEach(w => {
+    const inProgress = isoKey(w.monday) === isoKey(thisMonday);
+    const label = w.monday.toLocaleDateString('en-GB', { day:'2-digit', month:'short' });
+    const rateCls = w.rate >= MIN_RATE ? 'er-high' : 'er-low';
+    weekTable.innerHTML += `<tr>
+      <td class="muted">${label}${inProgress?' <span style="color:var(--accent2);font-size:10px;">· in progress</span>':''}</td>
+      <td>${w.posts}</td><td>${w.reach.toLocaleString()}</td><td class="muted">${(w.views||0).toLocaleString()}</td>
+      <td>+${w.followers}</td><td class="${rateCls}">${w.rate.toFixed(2)}</td>
+    </tr>`;
+  });
+
+  const convLabels = weeks.map(w => w.monday.toLocaleDateString('en-GB', { day:'2-digit', month:'short' }));
+  const convRates  = weeks.map(w => w.rate);
+  if (charts.conversion) charts.conversion.destroy();
+  charts.conversion = new Chart(document.getElementById('conversionChart'), {
+    type:'bar',
+    data:{ labels:convLabels, datasets:[
+      { label:'Rate /1k reach', data:convRates, backgroundColor:convRates.map(v=>v>=MIN_RATE?'rgba(61,232,158,0.7)':'rgba(255,85,119,0.6)'), borderColor:'transparent', borderRadius:2, order:2 },
+      { label:`Target ${MIN_RATE.toFixed(1)}`, type:'line', data:convRates.map(()=>MIN_RATE), borderColor:'rgba(180,142,224,0.7)', borderDash:[5,4], pointRadius:0, borderWidth:1.5, fill:false, order:1 }
+    ]},
+    options:{ responsive:true, plugins:{ legend:{display:true,labels:{color:'#a196b8',font:{size:11},boxWidth:12,padding:12}}, tooltip:{backgroundColor:'#1c1626',borderColor:'#322842',borderWidth:1,titleColor:'#f2eef8',bodyColor:'#a196b8',padding:10} }, scales:{ x:{grid:{display:false},ticks:{font:{size:10}}}, y:{grid:{color:'#241c33'},ticks:{font:{size:10}},title:{display:true,text:'Followers / 1,000 reach',color:'#6c6280',font:{size:10}},beginAtZero:true} } }
+  });
+
+  // RECENT POSTS
+  const sevenDaysAgo = new Date(new Date() - 7*86400000);
+  const recentSeven  = stats.allPosts.filter(p=>parseDate(p.date)>=sevenDaysAgo).sort((a,b)=>parseDate(b.date)-parseDate(a.date));
+  const recentGrid   = document.getElementById('recent-posts-grid');
+  const recentEmpty  = document.getElementById('recent-posts-empty');
+  recentGrid.innerHTML = '';
+  if (!recentSeven.length) {
+    recentEmpty.style.display = 'block'; recentGrid.style.display = 'none';
+  } else {
+    recentEmpty.style.display = 'none'; recentGrid.style.display = 'grid';
+    const fmtColors = { reel:'var(--green)', carousel:'var(--blue)', post:'var(--accent2)' };
+    recentSeven.forEach(p => {
+      const fmtCls = (p.format||'post').toLowerCase();
+      const fmtColor = fmtColors[fmtCls] || 'var(--accent)';
+      const hasData  = p.reach > 0 && p.engagement > 0;
+      const daysAgo  = Math.round((new Date() - parseDate(p.date)) / 86400000);
+      const daysLabel = daysAgo===0?'Today':daysAgo===1?'Yesterday':`${daysAgo} days ago`;
+      const reportDate = new Date(parseDate(p.date).getTime()+14*86400000);
+      const daysUntil  = Math.ceil((reportDate - new Date())/86400000);
+      const reportLabel = daysUntil>0 ? `Full data in ~${daysUntil} day${daysUntil>1?'s':''}` : 'Data available';
+      const statHTML = (label,value,sub,color) => `<div class="rp-stat">
+        <div class="rp-stat-label">${label}</div>
+        ${hasData&&value!=null
+          ? `<div class="rp-stat-value" style="color:${color}">${value}</div><div class="rp-stat-sub">${sub}</div>`
+          : `<div class="rp-stat-pending">Pending</div><div class="rp-stat-sub">${reportLabel}</div>`}
+      </div>`;
+      const skipColor = p.skipRate === null ? 'var(--muted)' : p.skipRate <= 45 ? 'var(--green)' : p.skipRate <= 60 ? 'var(--accent)' : 'var(--red)';
+      const skipDisplay = p.skipRate !== null ? p.skipRate.toFixed(1)+'%' : null;
+      recentGrid.innerHTML += `<div class="recent-post-card" style="border-left-color:${fmtColor};grid-template-columns:2fr 1fr 1fr 1fr 1fr${p.format.toLowerCase()==='reel'?' 1fr':''}">
+        <div class="rp-main">
+          <span class="rp-tag format-tag ${fmtCls}">${p.format||'Post'}</span>${p.isPaid?'<span class="ad-tag">AD</span>':''}
+          <div class="rp-title">${p.title}</div>
+          <div class="rp-meta">${daysLabel} · ${p.date.substring(0,5)} · ${p.pillar!=='—'?p.pillar:'Untagged'}</div>
+          ${!hasData?`<div class="rp-notice">⏳ Awaiting data · ${reportLabel}</div>`:''}
+          ${p.url?`<a href="${p.url}" target="_blank" class="rp-link">↗ View on Instagram</a>`:''}
+        </div>
+        ${statHTML('Reach', hasData?p.reach.toLocaleString():null, `vs avg ${stats.avgReach.toLocaleString()}`, 'var(--green)')}
+        ${statHTML('Views', hasData?(p.views||0).toLocaleString():null, 'impressions', 'var(--label)')}
+        ${statHTML('Engagement Rate', hasData?p.er.toFixed(1)+'%':null, `vs avg ${stats.avgER}%`, 'var(--accent)')}
+        ${statHTML('New Followers', hasData?'+'+p.newFollowers:null, `${p.engagement.toLocaleString()} engagements`, 'var(--blue)')}
+        ${p.format.toLowerCase()==='reel' ? statHTML('Skip Rate', hasData?skipDisplay:null, 'lower = better', skipColor) : ''}
+      </div>`;
+    });
+  }
+
+  // BEST POST (organic only — paid reach shouldn't win "best")
+  const validForBest = stats.organicPosts.filter(p => p.reach > 0);
+  if (validForBest.length) {
+    const best = validForBest.reduce((a,b) => {
+      const sA = a.reach*0.5 + a.er*10 + a.newFollowers*20;
+      const sB = b.reach*0.5 + b.er*10 + b.newFollowers*20;
+      return sB>sA?b:a;
+    });
+    const fmtCls = (best.format||'post').toLowerCase();
+    const isReel = fmtCls === 'reel';
+    const bestSkipColor = best.skipRate === null ? 'var(--muted)' : best.skipRate <= 45 ? 'var(--green)' : best.skipRate <= 60 ? 'var(--accent)' : 'var(--red)';
+    document.getElementById('best-post-card').innerHTML = `<div class="best-post" style="grid-template-columns:1fr${isReel?' 1fr 1fr 1fr 1fr 1fr':' 1fr 1fr 1fr 1fr'}">
+      <div class="bp-main">
+        <span class="bp-tag format-tag ${fmtCls}">${best.format}</span>
+        <div class="bp-title">${best.title}</div>
+        <div class="bp-date">${best.date.substring(0,5)} · ${best.pillar!=='—'?best.pillar:'Untagged'}</div>
+        ${best.url?`<a href="${best.url}" target="_blank" class="bp-link">↗ View on Instagram</a>`:''}
+      </div>
+      <div class="bp-stat"><div class="bp-stat-label">Reach</div><div class="bp-stat-value" style="color:var(--green)">${best.reach.toLocaleString()}</div><div class="bp-stat-sub">vs avg ${stats.avgReach.toLocaleString()}</div></div>
+      <div class="bp-stat"><div class="bp-stat-label">Views</div><div class="bp-stat-value" style="color:var(--label)">${(best.views||0).toLocaleString()}</div><div class="bp-stat-sub">impressions</div></div>
+      <div class="bp-stat"><div class="bp-stat-label">Engagement Rate</div><div class="bp-stat-value" style="color:var(--accent)">${best.er.toFixed(1)}%</div><div class="bp-stat-sub">vs avg ${stats.avgER}%</div></div>
+      <div class="bp-stat"><div class="bp-stat-label">New Followers</div><div class="bp-stat-value" style="color:var(--blue)">+${best.newFollowers}</div><div class="bp-stat-sub">${best.engagement.toLocaleString()} total engagements</div></div>
+      ${isReel ? `<div class="bp-stat"><div class="bp-stat-label">Skip Rate</div><div class="bp-stat-value" style="color:${bestSkipColor}">${best.skipRate!==null?best.skipRate.toFixed(1)+'%':'N/A'}</div><div class="bp-stat-sub">lower = better</div></div>` : ''}
+    </div>`;
+  }
+
+  // CONTENT MIX
+  const mixColors = { Reel:'reel', Carousel:'carousel', Post:'post' };
+  const mixGrid = document.getElementById('mix-grid');
+  mixGrid.innerHTML = '';
+  Object.entries(stats.formats).sort((a,b)=>b[1].count-a[1].count).forEach(([fmt,fx]) => {
+    const cls = mixColors[fmt] || 'post';
+    mixGrid.innerHTML += `<div class="mix-card">
+      <div class="mix-type">${fmt}</div>
+      <div class="mix-share ${cls}">${fx.pct}%</div>
+      <div class="mix-stats">
+        <div class="mix-stat">New Followers/post: <span>${fx.avgFollowers}</span></div>
+        <div class="mix-stat">Avg Reach: <span>${fx.avgReach.toLocaleString()}</span></div>
+        <div class="mix-stat">Avg Views: <span>${(fx.avgViews||0).toLocaleString()}</span></div>
+        <div class="mix-stat">Avg ER: <span>${fx.avgER}%</span></div>
+        <div class="mix-stat">Conv. Rate: <span>${fx.convRate}/1k</span></div>
+        ${fx.avgSkipRate !== null ? `<div class="mix-stat">Avg Skip Rate: <span style="color:${fx.avgSkipRate<=45?'var(--green)':fx.avgSkipRate<=60?'var(--accent)':'var(--red)'}">${fx.avgSkipRate}%</span></div>` : ''}
+        <div class="mix-stat">Avg Engagement: <span>${fx.avgEngagement}</span></div>
+        <div class="mix-stat">Posts: <span>${fx.count} of ${stats.organicPosts.length}</span></div>
+      </div>
+    </div>`;
+  });
+
+  // PILLARS — Victor's three: Min Musik, Mig, Covers
+  const pillarMeta = {
+    'Min Musik': { border:'var(--accent)',  text:'var(--accent)',  icon:'🎵' },
+    'Mig':       { border:'var(--accent2)', text:'var(--accent2)', icon:'👤' },
+    'Covers':    { border:'var(--blue)',    text:'var(--blue)',    icon:'🎤' },
+  };
+  const pillarGrid = document.getElementById('pillar-grid');
+  pillarGrid.innerHTML = '';
+  Object.entries(stats.pillars).forEach(([pl,px]) => {
+    const c = pillarMeta[pl] || { border:'var(--label)', text:'var(--label)', icon:'📌' };
+    pillarGrid.innerHTML += `<div class="pillar-card" style="border-top:3px solid ${c.border}">
+      <div class="pillar-name" style="color:${c.text}">${c.icon} ${pl}</div>
+      <div class="pillar-stats">
+        <div><div class="pillar-stat-val">${px.count}</div><div class="pillar-stat-lbl">Posts</div></div>
+        <div><div class="pillar-stat-val" style="color:${c.text}">${px.avgFollowers}</div><div class="pillar-stat-lbl">Foll./post</div></div>
+        <div><div class="pillar-stat-val">${px.avgReach.toLocaleString()}</div><div class="pillar-stat-lbl">Avg Reach</div></div>
+        <div><div class="pillar-stat-val" style="color:${c.text}">${px.avgER}%</div><div class="pillar-stat-lbl">Avg ER</div></div>
+        <div><div class="pillar-stat-val">${px.convRate}</div><div class="pillar-stat-lbl">Conv /1k</div></div>
+        ${px.avgSkipRate!==null?`<div><div class="pillar-stat-val" style="color:${px.avgSkipRate<=45?'var(--green)':px.avgSkipRate<=60?'var(--accent)':'var(--red)'}">${px.avgSkipRate}%</div><div class="pillar-stat-lbl">Skip Rate</div></div>`:''}
+      </div>
+    </div>`;
+  });
+
+  // POST TABLE — sortable, all posts including paid (tagged)
+  document.getElementById('post-count').textContent = `${stats.allPosts.length} posts tracked`;
+
+  let tableData = stats.allPosts.map(p => ({
+    ...p,
+    saves1k: p.reach > 0 ? (p.saves||0)/p.reach*1000 : 0,
+    sends1k: p.reach > 0 ? (p.sends||0)/p.reach*1000 : 0,
+  }));
+
+  let sortCol = 'date';
+  let sortDir = -1;
+
+  function renderPostTable() {
+    const tbody = document.getElementById('postTable');
+    tbody.innerHTML = '';
+
+    document.querySelectorAll('#postTableHead th[data-col]').forEach(th => {
+      th.classList.remove('sort-asc','sort-desc');
+      if (th.dataset.col === sortCol) th.classList.add(sortDir === -1 ? 'sort-desc' : 'sort-asc');
+    });
+
+    const sorted = [...tableData].sort((a, b) => {
+      let av, bv;
+      if (sortCol === 'date')         { av = parseDate(a.date); bv = parseDate(b.date); return sortDir * (av - bv); }
+      if (sortCol === 'format')       { return sortDir * a.format.localeCompare(b.format); }
+      if (sortCol === 'pillar')       { return sortDir * (a.pillar||'').localeCompare(b.pillar||''); }
+      if (sortCol === 'reach')        { return sortDir * (a.reach - b.reach); }
+      if (sortCol === 'views')        { return sortDir * ((a.views||0) - (b.views||0)); }
+      if (sortCol === 'skipRate')     { return sortDir * ((a.skipRate??-1) - (b.skipRate??-1)); }
+      if (sortCol === 'saves1k')      { return sortDir * (a.saves1k - b.saves1k); }
+      if (sortCol === 'sends1k')      { return sortDir * (a.sends1k - b.sends1k); }
+      if (sortCol === 'er')           { return sortDir * (a.er - b.er); }
+      if (sortCol === 'newFollowers') { return sortDir * (a.newFollowers - b.newFollowers); }
+      return 0;
+    });
+
+    sorted.forEach(p => {
+      const erClass    = p.er >= 15 ? 'er-high' : p.er >= 8 ? 'er-mid' : 'er-low';
+      const savesClass = p.saves1k >= 1.0 ? 'er-high' : 'er-low';
+      const fmt        = (p.format||'Post').toLowerCase();
+      const fmtTag     = `<span class="format-tag ${fmt}">${p.format||'Post'}</span>${p.isPaid?'<span class="ad-tag">AD</span>':''}`;
+      const skipVal    = p.skipRate !== null ? p.skipRate.toFixed(1)+'%' : '—';
+      const skipClass  = p.skipRate === null ? '' : p.skipRate <= 45 ? 'skip-low' : p.skipRate <= 60 ? 'skip-mid' : 'skip-high';
+      tbody.innerHTML += `<tr>
+        <td class="muted">${p.date.substring(0,5)}</td>
+        <td>${p.title}</td>
+        <td>${fmtTag}</td>
+        <td class="muted">${p.pillar}</td>
+        <td>${p.reach.toLocaleString()}</td>
+        <td class="muted">${(p.views||0).toLocaleString()}</td>
+        <td class="${skipClass}">${skipVal}</td>
+        <td class="${savesClass}">${p.saves1k.toFixed(2)}</td>
+        <td class="muted">${p.sends1k.toFixed(2)}</td>
+        <td class="${erClass}">${p.er.toFixed(1)}%</td>
+        <td>${p.newFollowers > 0 ? '+'+p.newFollowers : '—'}</td>
+        <td>${p.url?`<a href="${p.url}" target="_blank" class="ig-link">↗ IG</a>`:'—'}</td>
+      </tr>`;
+    });
+  }
+
+  document.querySelectorAll('#postTableHead th[data-col]').forEach(th => {
+    th.addEventListener('click', () => {
+      if (sortCol === th.dataset.col) { sortDir *= -1; }
+      else { sortCol = th.dataset.col; sortDir = -1; }
+      renderPostTable();
+    });
+  });
+
+  renderPostTable();
+}
+
+async function init() {
+  try {
+    const rows  = await fetchSheetData();
+    const posts = parseRows(rows);
+    if (!posts.length) throw new Error('No post data found. Make sure the sheet is set to "Anyone with the link can view".');
+    const stats = computeStats(posts);
+    document.getElementById('loading').style.display   = 'none';
+    document.getElementById('dashboard').style.display = 'block';
+    renderDashboard(posts, stats);
+  } catch (err) {
+    document.getElementById('loading').style.display     = 'none';
+    document.getElementById('error-state').style.display = 'flex';
+    document.getElementById('error-msg').innerHTML =
+      `<strong>${err.message}</strong><br><br>
+       Sheet ID: <code>${SHEET_ID}</code><br>Fetching: <code>${SHEET_URL}</code>`;
+    console.error('Full error:', err);
+  }
+}
+
+init();
+</script>
+</body>
+</html>
